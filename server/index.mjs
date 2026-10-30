@@ -521,25 +521,77 @@ const tasks = createAgyTasks({
   onStart: (t) => {
     const folder = path.basename(t.dir);
     chat.system(`🚀 [Antigravity] Bắt đầu task tại ${folder}...`);
+    const key = 'p' + t.pid;
+    let s = sessions.get(key);
+    if (!s) {
+      s = newSession(key);
+      s.pid = t.pid;
+      s.sid = t.conversationId || t.sid || `agy-${t.id}`;
+      s.cwd = t.dir;
+      s.name = `agy-${folder}`;
+      s.title = `Task: ${folder}`;
+      s.lastPrompt = t.text;
+      s.status = 'work';
+      s.busy = true;
+      s.taskStart = Date.now();
+      sessions.set(key, s);
+      if (s.sid) sidToKey.set(s.sid, key);
+      broadcast({ k: 'sess', s: pub(s) });
+    }
   },
   onUpdate: (t, u) => {
+    const key = 'p' + t.pid;
+    let s = sessions.get(key) || (t.sid && bySid(t.sid));
+    if (!s) {
+      s = newSession(key);
+      s.pid = t.pid;
+      s.cwd = t.dir;
+      s.name = `agy-${path.basename(t.dir)}`;
+      sessions.set(key, s);
+    }
+    if (t.conversationId && (!s.sid || s.sid !== t.conversationId)) {
+      if (s.sid) sidToKey.delete(s.sid);
+      s.sid = t.conversationId;
+      sidToKey.set(s.sid, key);
+    }
+    s.lastEventAt = Date.now();
     if (u?.type === 'tool') {
-      const s = [...sessions.values()].find((x) => x.sid === t.sid || x.id === t.from?.id);
-      if (s) {
-        s.status = u.toolName || 'working';
-        s.activity = u.toolName === 'run_command' ? 'running' : 'reading';
+      s.status = 'work';
+      s.busy = true;
+      const tn = u.toolName || '';
+      if (tn === 'run_command') {
+        s.counts.cmd = (s.counts.cmd || 0) + 1;
+        s.last = { type: 'cmd', text: u.toolInfo?.parameters?.CommandLine || 'run_command' };
+      } else if (tn.includes('read') || tn.includes('view')) {
+        s.counts.read = (s.counts.read || 0) + 1;
+        s.last = { type: 'read', path: u.toolInfo?.parameters?.Path || '' };
+      } else if (tn.includes('write') || tn.includes('edit')) {
+        s.counts.edit = (s.counts.edit || 0) + 1;
+        s.last = { type: 'edit', path: u.toolInfo?.parameters?.Path || '' };
       }
+      broadcast({ k: 'sess', s: pub(s) });
+    } else if (u?.type === 'delta') {
+      s.lastReply = (s.lastReply || '') + u.delta;
+      broadcast({ k: 'sess', s: pub(s) });
     }
   },
 
   onDone: (t) => {
+    const key = 'p' + t.pid;
+    const s = sessions.get(key);
+    if (s) {
+      s.status = 'rest';
+      s.busy = false;
+      s.doneAt = Date.now();
+      broadcast({ k: 'sess', s: pub(s) });
+    }
     if (t.sid) taskSids.add(t.sid);
     const dm = t.from?.chat, folder = path.basename(t.dir);
     // the answer from whoever you asked (the conversation's person; Claude itself for a new conversation, or if that one has gone)
-    const all = [...sessions.values()], who = (t.from?.id && all.some((x) => x.id === t.from.id) && t.from.id) || (dm ? 'claude' : t.sid && all.find((x) => x.sid === t.sid)?.id);
+    const all = [...sessions.values()], who = (t.from?.id && all.some((x) => x.id === t.from.id) && t.from.id) || (dm ? 'agy' : t.sid && all.find((x) => x.sid === t.sid)?.id);
     const text = t.error && !t.result ? tr('chat.task.failed', { folder, error: clip(oneLine(t.error), 200) }) : clip(String(t.result || tr('chat.task.doneEmpty')), dm ? 3800 : 560);
     const quote = taskQuote.get(t.id) || null; taskQuote.delete(t.id);
-    if (dm) { chat.working(t.from.id || 'claude', false); if (t.sid) threads.set(t.from.orig, { sid: t.sid, at: Date.now(), running: false }); else threads.delete(t.from.orig); }   // (no branch made: the next message makes one)
+    if (dm) { chat.working(t.from.id || 'agy', false); if (t.sid) threads.set(t.from.orig, { sid: t.sid, at: Date.now(), running: false }); else threads.delete(t.from.orig); }   // (no branch made: the next message makes one)
     if (who) chat.say(who, text, { now: dm, long: dm, reply: quote, tag: 'claude', react: ['❤️', '👍'], reacts: 2 });
     else chat.system(`📋 ${folder}: ${clip(oneLine(text), 300)}`);
     pushOut({ title: `💬 ${t.from?.name || folder}`, body: clip(oneLine(text), 180), tag: `task-${t.id}`, url: '/?chat' });

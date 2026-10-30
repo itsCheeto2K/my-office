@@ -54,7 +54,7 @@ export default {
   memberWork: 'Working',
   memberRest: 'Free',
   memberWait: 'Waiting for you',
-  noSessions: 'No Claude conversation is open yet.',
+  noSessions: 'No AI conversation is open yet.',
   memberOut: 'Away',
   memberStaff: 'Building staff',
   memberYou: 'Group owner',

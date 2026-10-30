@@ -3,7 +3,7 @@ export default {
   wait: 'Cần bạn',
   work: 'Đang làm',
   rest: 'Đang nghỉ',
-  empty: 'Chưa có phiên Claude Code nào đang mở.',
+  empty: 'Chưa có phiên AI nào đang mở.',
   subs: '{n} trợ lý',
   ctx: 'ngữ cảnh {pct}%',
 };

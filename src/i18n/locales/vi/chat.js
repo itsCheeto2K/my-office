@@ -54,7 +54,7 @@ export default {
   memberWork: 'Đang làm việc',
   memberRest: 'Đang rảnh',
   memberWait: 'Chờ bạn duyệt',
-  noSessions: 'Chưa có cuộc trò chuyện Claude nào đang mở.',
+  noSessions: 'Chưa có cuộc trò chuyện AI nào đang mở.',
   memberOut: 'Vắng mặt',
   memberStaff: 'Nhân viên toà nhà',
   memberYou: 'Trưởng nhóm',

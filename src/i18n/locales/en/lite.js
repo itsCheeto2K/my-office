@@ -3,7 +3,7 @@ export default {
   wait: 'Needs you',
   work: 'Working',
   rest: 'Resting',
-  empty: 'No Claude Code sessions open yet.',
+  empty: 'No AI sessions open yet.',
   subs: { one: '{n} subagent', other: '{n} subagents' },
   ctx: 'context {pct}%',
 };
