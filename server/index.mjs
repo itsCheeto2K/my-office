@@ -20,7 +20,7 @@ import next from 'next';
 import { buildTimeline } from '../src/shared/timeline.js';
 import { dangerKey } from '../src/shared/danger.js';
 import { createChatEngine, REACTIONS } from '../src/shared/chat-engine.js';
-import { createTasks } from './tasks.mjs';
+import { createAgyTasks } from './agy-tasks.mjs';
 import { createPush } from './push.mjs';
 import { createTrophies } from './trophies.mjs';
 import { createGit } from './git.mjs';
@@ -516,9 +516,22 @@ const chatOut = () => ({ ok: true, msgs: chat.state.msgs, pinned: chat.state.pin
 
 /* ---------- "Giao việc" (server/tasks.mjs): Claude Code runs started from the office ---------- */
 const taskSids = new Set(), taskQuote = new Map();   // the sessions those runs became (their leaving isn't announced: their result is); your task, quoted in the answer
-const tasks = createTasks({
-  dataDir: DATA_DIR, claude: () => findClaude(),
-  env: () => { const e = { ...process.env }; if (nowDir) e.CLAUDE_CONFIG_DIR = nowDir; return e; },   // (the account new sessions start on)
+const tasks = createAgyTasks({
+  dataDir: DATA_DIR,
+  onStart: (t) => {
+    const folder = path.basename(t.dir);
+    chat.system(`🚀 [Antigravity] Bắt đầu task tại ${folder}...`);
+  },
+  onUpdate: (t, u) => {
+    if (u?.type === 'tool') {
+      const s = [...sessions.values()].find((x) => x.sid === t.sid || x.id === t.from?.id);
+      if (s) {
+        s.status = u.toolName || 'working';
+        s.activity = u.toolName === 'run_command' ? 'running' : 'reading';
+      }
+    }
+  },
+
   onDone: (t) => {
     if (t.sid) taskSids.add(t.sid);
     const dm = t.from?.chat, folder = path.basename(t.dir);
@@ -547,7 +560,20 @@ const tasksOut = (local) => ({ ok: true, allowed: local || !!prefs.get('phoneTas
 /* ---------- the project folders sessions have worked in: where "Giao việc" may start a new conversation (a phone
    picks one of these, never a path of its own); the last 30, kept in data/projects.json ---------- */
 const DIRS_FILE = path.join(DATA_DIR, 'projects.json');
+function loadAgyWorkspaces() {
+  try {
+    const p = path.join(HOME, '.gemini', 'antigravity-cli', 'settings.json');
+    if (fs.existsSync(p)) {
+      const j = JSON.parse(fs.readFileSync(p, 'utf8'));
+      if (Array.isArray(j.trustedWorkspaces)) {
+        return j.trustedWorkspaces.filter((d) => typeof d === 'string' && fs.existsSync(d));
+      }
+    }
+  } catch { /* none */ }
+  return [];
+}
 let knownDirs = []; try { knownDirs = JSON.parse(fs.readFileSync(DIRS_FILE, 'utf8')).filter((d) => typeof d === 'string'); } catch { /* none yet */ }
+knownDirs = [...new Set([...loadAgyWorkspaces(), ...knownDirs])].slice(0, 50);
 function noteDir(dir) {
   if (!dir || !path.isAbsolute(dir) || knownDirs[0] === dir) return;
   knownDirs = [dir, ...knownDirs.filter((d) => d !== dir)].slice(0, 30);
@@ -1832,7 +1858,8 @@ const server = http.createServer((req, res) => {
       // where: a conversation the office knows (its context, branched), or a folder sessions have worked in
       const s = b?.sid && [...sessions.values()].find((x) => x.sid === String(b.sid) && x.cwd);
       if (b?.chat) {   // a message from the chat: to a conversation (on its branch, the answer from its person), or to a project (a new conversation there: fresh)
-        const want = String(b?.dir || '').replace(/^~(?=$|\/)/, os.homedir()), pdir = !s && knownDirs.find((d) => d === want);
+        const want = String(b?.dir || '').replace(/^~(?=$|\/)/, os.homedir()), pdir = !s && (fs.existsSync(want) ? want : knownDirs.find((d) => d === want));
+        if (pdir) noteDir(pdir);
         if (!s && !pdir) { json(res, 400, { ok: false, code: 'noDir', message: tr('chat.task.noDir') }); return; }
         const key = s ? s.sid : `dir:${pdir}`, text = String(b?.text || '').trim().slice(0, 4000), name = s ? s.title || s.name : path.basename(pdir), th = threads.get(key);
         if (!text) { json(res, 400, { ok: false, code: 'empty' }); return; }
@@ -1847,7 +1874,8 @@ const server = http.createServer((req, res) => {
         json(res, r.ok ? 200 : 409, r.ok ? { ok: true, task: r.task } : { ok: false, code: r.code, message: tr(`chat.task.why.${r.code}`) });
         return;
       }
-      const want = String(b?.dir || '').replace(/^~(?=$|\/)/, os.homedir()), dir = s ? s.cwd : knownDirs.find((d) => d === want);
+      const want = String(b?.dir || '').replace(/^~(?=$|\/)/, os.homedir()), dir = s ? s.cwd : (fs.existsSync(want) ? want : knownDirs.find((d) => d === want));
+      if (dir) noteDir(dir);
       if (!dir) { json(res, 400, { ok: false, code: 'noDir', message: tr('chat.task.noDir') }); return; }
       const text = String(b?.text || '').trim().slice(0, 4000), images = (Array.isArray(b?.images) ? b.images : []).slice(0, 4).map(String);
       if (!text) { json(res, 400, { ok: false, code: 'empty' }); return; }
