@@ -1,0 +1,17 @@
+{
+  "my-office-approval": {
+    "enabled": true,
+    "PreToolUse": [
+      {
+        "matcher": "run_command|write_to_file|edit_file|multi_replace_file_content|replace_file_content",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "node \"hooks/agy-hook.mjs\"",
+            "timeout": 55
+          }
+        ]
+      }
+    ]
+  }
+}
