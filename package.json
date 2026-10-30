@@ -16,7 +16,7 @@
   "scripts": {
     "dev": "node server/index.mjs --dev",
     "build": "next build",
-    "start": "NODE_ENV=production node server/index.mjs",
+    "start": "node scripts/start.mjs",
     "lint": "eslint .",
     "typecheck": "tsc --noEmit",
     "test": "node --test",
