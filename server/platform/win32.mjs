@@ -44,7 +44,7 @@ export function parseReading(json, now = Date.now()) {
 let last = null, lastAt = 0, reading = null;
 const cpuState = { prev: null, at: 0 };
 function read() {
-  if (last && Date.now() - lastAt < 2000) return Promise.resolve(last);
+  if (last && Date.now() - lastAt < 10000) return Promise.resolve(last);
   reading ??= sh('powershell.exe', ['-NoProfile', '-NonInteractive', '-Command', SCRIPT], 30000).then((out) => {
     const r = parseReading(out);
     if (r) {
@@ -61,12 +61,30 @@ export async function liteProcs() { return { procs: (await read()).procs }; }
 export const footprints = async () => new Map();
 export const footprintAt = () => 0;
 export async function memory() {
-  const r = await read(), total = os.totalmem(), used = total - os.freemem(), left = 1 - used / total;
-  return { total, used, compressed: 0, swapTotal: r.pageTotal, swapUsed: r.pageUsed, pressure: left < 0.08 ? 'critical' : left < 0.18 ? 'warn' : 'normal' };
+  const total = os.totalmem(), used = total - os.freemem(), left = 1 - used / total;
+  const pageTotal = last?.pageTotal || 0, pageUsed = last?.pageUsed || 0;
+  return { total, used, compressed: 0, swapTotal: pageTotal, swapUsed: pageUsed, pressure: left < 0.08 ? 'critical' : left < 0.18 ? 'warn' : 'normal' };
 }
 export async function disk() {
-  try { const s = await fsp.statfs(`${process.env.SystemDrive || 'C:'}\\`); const total = s.blocks * s.bsize, free = s.bavail * s.bsize; return { total, free, used: total - free }; }
-  catch { return { total: 0, free: 0, used: 0 }; }
+  const drives = {};
+  let totalAll = 0, freeAll = 0;
+  for (const drive of ['C:', 'D:']) {
+    try {
+      const s = await fsp.statfs(`${drive}\\`);
+      const total = s.blocks * s.bsize, free = s.bavail * s.bsize;
+      drives[drive] = { total, free, used: total - free };
+      totalAll += total;
+      freeAll += free;
+    } catch { /* drive not mounted */ }
+  }
+  const primary = drives['D:'] || drives['C:'] || { total: 0, free: 0, used: 0 };
+  return {
+    total: totalAll || primary.total,
+    free: freeAll || primary.free,
+    used: (totalAll - freeAll) || primary.used,
+    drives
+  };
+
 }
 export async function listeners() {
   const map = new Map();
